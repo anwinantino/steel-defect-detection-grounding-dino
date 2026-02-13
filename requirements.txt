@@ -1,0 +1,16 @@
+transformers>=4.38.0
+torch
+torchvision
+opencv-python
+fastapi
+uvicorn
+numpy
+pillow
+pandas
+matplotlib
+python-multipart
+scikit-learn
+tqdm
+roboflow
+ultralytics
+requests

@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Steel Defect Detection — Grounding DINO</title>
+  <meta name="description"
+    content="Zero-shot steel surface defect detection powered by Grounding DINO. Upload an image to detect cracks, rust, scratches, and more." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ──────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0b0e14;
+      --surface: #131720;
+      --surface-2: #1a1f2e;
+      --border: rgba(255, 255, 255, 0.06);
+      --text: #e4e8f1;
+      --text-dim: #8891a5;
+      --accent: #6c5ce7;
+      --accent-glow: rgba(108, 92, 231, 0.35);
+      --green: #00d68f;
+      --orange: #f0a500;
+      --red: #ff4757;
+      --blue: #0984e3;
+      --pink: #e84393;
+      --cyan: #00cec9;
+      --radius: 14px;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    html {
+      font-size: 15px;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ──────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 600px 400px at 20% 10%, rgba(108, 92, 231, 0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 500px at 80% 80%, rgba(0, 214, 143, 0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Layout ────────────────────────────────── */
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ── Header ────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    header .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      background: rgba(108, 92, 231, 0.12);
+      border: 1px solid rgba(108, 92, 231, 0.25);
+      border-radius: 999px;
+      padding: .3rem .9rem;
+      font-size: .72rem;
+      font-weight: 600;
+      color: #a29bfe;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 1rem;
+    }
+
+    header .badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .4;
+      }
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -.03em;
+      line-height: 1.15;
+    }
+
+    header h1 span {
+      background: linear-gradient(135deg, #a29bfe, #6c5ce7, #00d68f);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    header p {
+      margin-top: .6rem;
+      color: var(--text-dim);
+      font-size: .92rem;
+      max-width: 500px;
+      margin-inline: auto;
+      line-height: 1.55;
+    }
+
+    /* ── Tab navigation ────────────────────────── */
+    .tab-nav {
+      display: flex;
+      justify-content: center;
+      gap: .5rem;
+      margin-bottom: 2rem;
+    }
+
+    .tab-btn {
+      padding: .6rem 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .25s;
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+    }
+
+    .tab-btn:hover {
+      border-color: rgba(108, 92, 231, 0.3);
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(108, 92, 231, 0.3);
+    }
+
+    .tab-btn .tab-icon {
+      font-size: 1rem;
+    }
+
+    .tab-page {
+      display: none;
+    }
+
+    .tab-page.active {
+      display: block;
+    }
+
+    /* ── Upload area ───────────────────────────── */
+    .upload-zone {
+      position: relative;
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all .3s ease;
+      overflow: hidden;
+    }
+
+    .upload-zone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, var(--accent-glow), transparent 70%);
+      opacity: 0;
+      transition: opacity .4s;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(108, 92, 231, 0.15);
+    }
+
+    .upload-zone:hover::before,
+    .upload-zone.dragover::before {
+      opacity: 1;
+    }
+
+    .upload-zone .icon {
+      position: relative;
+      z-index: 1;
+      font-size: 2.8rem;
+      margin-bottom: .8rem;
+    }
+
+    .upload-zone .label {
+      position: relative;
+      z-index: 1;
+      font-weight: 600;
+      font-size: 1.05rem;
+    }
+
+    .upload-zone .hint {
+      position: relative;
+      z-index: 1;
+      color: var(--text-dim);
+      font-size: .8rem;
+      margin-top: .4rem;
+    }
+
+    .upload-zone input {
+      display: none;
+    }
+
+    /* ── Two-column results ────────────────────── */
+    .results {
+      display: none;
+      margin-top: 2rem;
+      gap: 1.5rem;
+    }
+
+    .results.visible {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+    }
+
+    @media (max-width: 800px) {
+      .results.visible {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ── Image panel ───────────────────────────── */
+    .image-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      position: relative;
+    }
+
+    .image-panel canvas {
+      width: 100%;
+      border-radius: 8px;
+      display: block;
+    }
+
+    /* ── Details panel ─────────────────────────── */
+    .details-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* ── Status card ───────────────────────────── */
+    .status-card {
+      border-radius: var(--radius);
+      padding: 1.3rem 1.4rem;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .status-card.none {
+      background: linear-gradient(135deg, rgba(0, 214, 143, 0.12), rgba(0, 214, 143, 0.03));
+      border-color: rgba(0, 214, 143, 0.2);
+    }
+
+    .status-card.minor {
+      background: linear-gradient(135deg, rgba(240, 165, 0, 0.12), rgba(240, 165, 0, 0.03));
+      border-color: rgba(240, 165, 0, 0.2);
+    }
+
+    .status-card.critical {
+      background: linear-gradient(135deg, rgba(255, 71, 87, 0.12), rgba(255, 71, 87, 0.03));
+      border-color: rgba(255, 71, 87, 0.2);
+    }
+
+    .status-card .severity-label {
+      font-size: 1.3rem;
+      font-weight: 800;
+      letter-spacing: .02em;
+    }
+
+    .status-card.none .severity-label {
+      color: var(--green);
+    }
+
+    .status-card.minor .severity-label {
+      color: var(--orange);
+    }
+
+    .status-card.critical .severity-label {
+      color: var(--red);
+    }
+
+    .status-card .meta-row {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: .7rem;
+      font-size: .78rem;
+      color: var(--text-dim);
+    }
+
+    .status-card .meta-row strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* ── Detection list ────────────────────────── */
+    .det-list-title {
+      font-size: .78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-dim);
+      padding-left: .2rem;
+    }
+
+    .det-list {
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
+      overflow-y: auto;
+      max-height: 420px;
+      padding-right: .3rem;
+    }
+
+    .det-list::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .det-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .det-list::-webkit-scrollbar-thumb {
+      background: var(--surface-2);
+      border-radius: 99px;
+    }
+
+    .det-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: .85rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      transition: border-color .2s, background .2s;
+      cursor: default;
+    }
+
+    .det-card:hover {
+      border-color: rgba(108, 92, 231, 0.3);
+      background: var(--surface-2);
+    }
+
+    .det-card .color-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .det-card .det-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .det-card .det-label {
+      font-weight: 600;
+      font-size: .88rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: capitalize;
+    }
+
+    .det-card .det-conf {
+      font-size: .72rem;
+      color: var(--text-dim);
+      margin-top: .15rem;
+    }
+
+    .det-card .conf-bar {
+      width: 50px;
+      height: 5px;
+      border-radius: 99px;
+      background: var(--surface-2);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .det-card .conf-bar-inner {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--accent);
+      transition: width .6s ease;
+    }
+
+    /* ── Loading overlay ───────────────────────── */
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(11, 14, 20, 0.85);
+      backdrop-filter: blur(6px);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.2rem;
+    }
+
+    .loading-overlay.active {
+      display: flex;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--surface-2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-overlay p {
+      color: var(--text-dim);
+      font-size: .9rem;
+      font-weight: 500;
+    }
+
+    /* ── Footer ────────────────────────────────── */
+    .footer {
+      text-align: center;
+      margin-top: 3rem;
+      font-size: .72rem;
+      color: var(--text-dim);
+      opacity: .6;
+    }
+
+    /* ── Reset / Try another button ────────────── */
+    .reset-btn {
+      display: none;
+      margin: 1.5rem auto 0;
+      padding: .65rem 1.8rem;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-family: var(--font);
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .25s;
+    }
+
+    .reset-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .reset-btn.visible {
+      display: inline-block;
+    }
+
+    /* ── Animate-in ────────────────────────────── */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-in {
+      animation: fadeUp .5s ease forwards;
+    }
+
+    /* ════════════════════════════════════════════
+       EVALUATION PAGE STYLES
+       ════════════════════════════════════════════ */
+
+    .eval-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .eval-header h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: .4rem;
+    }
+
+    .eval-header p {
+      color: var(--text-dim);
+      font-size: .85rem;
+    }
+
+    /* Stat cards row */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.3rem 1.2rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+
+    .stat-card.accent::before {
+      background: var(--accent);
+    }
+
+    .stat-card.green::before {
+      background: var(--green);
+    }
+
+    .stat-card.orange::before {
+      background: var(--orange);
+    }
+
+    .stat-card.blue::before {
+      background: var(--blue);
+    }
+
+    .stat-card.red::before {
+      background: var(--red);
+    }
+
+    .stat-card.cyan::before {
+      background: var(--cyan);
+    }
+
+    .stat-card .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: .4rem;
+    }
+
+    .stat-card.accent .stat-value {
+      color: #a29bfe;
+    }
+
+    .stat-card.green .stat-value {
+      color: var(--green);
+    }
+
+    .stat-card.orange .stat-value {
+      color: var(--orange);
+    }
+
+    .stat-card.blue .stat-value {
+      color: var(--blue);
+    }
+
+    .stat-card.red .stat-value {
+      color: var(--red);
+    }
+
+    .stat-card.cyan .stat-value {
+      color: var(--cyan);
+    }
+
+    .stat-card .stat-label {
+      font-size: .72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+    }
+
+    /* Per-class table */
+    .class-section {
+      margin-bottom: 2rem;
+    }
+
+    .class-section h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .class-section h3 .icon {
+      font-size: 1.1rem;
+    }
+
+    .class-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .class-table thead th {
+      background: var(--surface-2);
+      padding: .7rem .8rem;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .class-table thead th:first-child {
+      border-radius: var(--radius) 0 0 0;
+    }
+
+    .class-table thead th:last-child {
+      border-radius: 0 var(--radius) 0 0;
+    }
+
+    .class-table tbody td {
+      padding: .7rem .8rem;
+      font-size: .82rem;
+      border-top: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .class-table tbody tr:hover {
+      background: rgba(108, 92, 231, 0.04);
+    }
+
+    .class-table .class-name {
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    /* Inline bar */
+    .metric-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      min-width: 100px;
+    }
+
+    .metric-bar-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 99px;
+      background: var(--surface-2);
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width .8s ease;
+    }
+
+    .metric-bar-value {
+      font-weight: 600;
+      font-size: .78rem;
+      min-width: 36px;
+      text-align: right;
+    }
+
+    /* Per-class visual bars section */
+    .bar-chart-section {
+      margin-bottom: 2rem;
+    }
+
+    .bar-chart-section h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .bar-chart-row {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      margin-bottom: .6rem;
+    }
+
+    .bar-chart-label {
+      width: 120px;
+      text-align: right;
+      font-size: .78rem;
+      font-weight: 600;
+      text-transform: capitalize;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    .bar-chart-track {
+      flex: 1;
+      height: 24px;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-chart-fill {
+      height: 100%;
+      border-radius: 6px 0 0 6px;
+      transition: width 1.2s ease;
+      position: relative;
+      display: flex;
+      align-items: center;
+      padding-left: .5rem;
+    }
+
+    .bar-chart-fill span {
+      font-size: .68rem;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      white-space: nowrap;
+    }
+
+    /* Model info card */
+    .model-info {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.2rem 1.4rem;
+      margin-bottom: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: .8rem;
+    }
+
+    .model-info-item {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+    }
+
+    .model-info-item .label {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--text-dim);
+    }
+
+    .model-info-item .value {
+      font-size: .85rem;
+      font-weight: 500;
+    }
+
+    /* No data state */
+    .eval-empty {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+
+    .eval-empty .icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .eval-empty h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: .5rem;
+    }
+
+    .eval-empty p {
+      color: var(--text-dim);
+      font-size: .85rem;
+      max-width: 400px;
+      margin-inline: auto;
+      line-height: 1.5;
+    }
+
+    .eval-empty code {
+      display: inline-block;
+      margin-top: 1rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .5rem 1.2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .82rem;
+      color: var(--green);
+    }
+
+    /* Count animations */
+    @keyframes countUp {
+      from {
+        opacity: 0;
+        transform: scale(0.5);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .stat-card .stat-value {
+      animation: countUp .6s ease forwards;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header>
+      <div class="badge"><span class="dot"></span> Grounding DINO — Zero-Shot</div>
+      <h1>Steel <span>Defect Detection</span></h1>
+      <p>Upload an image of a steel surface to detect cracks, scratches, corrosion, and other defects in real time.</p>
+    </header>
+
+    <!-- Tab navigation -->
+    <nav class="tab-nav" id="tabNav">
+      <button class="tab-btn active" data-tab="detection" id="tabDetection">
+        <span class="tab-icon">🔍</span> Detection
+      </button>
+      <button class="tab-btn" data-tab="evaluation" id="tabEvaluation">
+        <span class="tab-icon">📊</span> Model Evaluation
+      </button>
+    </nav>
+
+    <!-- ═══ Detection Tab ═══ -->
+    <div class="tab-page active" id="pageDetection">
+      <!-- Upload zone -->
+      <div class="upload-zone" id="uploadZone">
+        <div class="icon">🔍</div>
+        <div class="label">Drop an image here or click to upload</div>
+        <div class="hint">Supports JPG, PNG, BMP, TIFF</div>
+        <input type="file" id="fileInput" accept="image/*" />
+      </div>
+
+      <!-- Reset button -->
+      <button class="reset-btn" id="resetBtn">↻ Try Another Image</button>
+
+      <!-- Results -->
+      <div class="results" id="results">
+        <div class="image-panel" id="imagePanel">
+          <canvas id="canvas"></canvas>
+        </div>
+        <div class="details-panel" id="detailsPanel">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Evaluation Tab ═══ -->
+    <div class="tab-page" id="pageEvaluation">
+      <div id="evalContent">
+        <!-- Filled by JS when tab is activated -->
+        <div class="eval-empty">
+          <div class="icon">⏳</div>
+          <h3>Loading evaluation data…</h3>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">Powered by IDEA-Research/grounding-dino-base · NEU Surface Defect Dataset via Roboflow</div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <p>Analyzing steel surface…</p>
+  </div>
+
+  <script>
+    const API_URL = window.location.origin;
+
+    /* ── DOM refs ───────────────────────────── */
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const results = document.getElementById('results');
+    const canvas = document.getElementById('canvas');
+    const detailsPanel = document.getElementById('detailsPanel');
+    const loading = document.getElementById('loadingOverlay');
+    const resetBtn = document.getElementById('resetBtn');
+    const ctx = canvas.getContext('2d');
+
+    /* ── Color palette for bounding boxes ──── */
+    const COLORS = [
+      '#6c5ce7', '#00d68f', '#f0a500', '#ff4757',
+      '#0984e3', '#e84393', '#00cec9', '#fdcb6e',
+    ];
+
+    const CLASS_COLORS = {
+      'crazing': '#6c5ce7',
+      'inclusion': '#0984e3',
+      'patches': '#f0a500',
+      'pitted_surface': '#ff4757',
+      'rolled-in_scale': '#e84393',
+      'scratches': '#00cec9',
+    };
+
+    /* ══════════════════════════════════════════
+       TAB NAVIGATION
+       ══════════════════════════════════════════ */
+    let evalLoaded = false;
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const tabId = btn.dataset.tab;
+        document.getElementById('page' + tabId.charAt(0).toUpperCase() + tabId.slice(1)).classList.add('active');
+
+        if (tabId === 'evaluation' && !evalLoaded) {
+          loadEvaluation();
+        }
+      });
+    });
+
+    /* ══════════════════════════════════════════
+       DETECTION PAGE
+       ══════════════════════════════════════════ */
+
+    /* ── Drag & drop / click ───────────────── */
+    uploadZone.addEventListener('click', () => fileInput.click());
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+    resetBtn.addEventListener('click', resetUI);
+
+    /* ── Main flow ─────────────────────────── */
+    async function handleFile(file) {
+      if (!file.type.startsWith('image/')) { alert('Please upload an image file.'); return; }
+
+      loading.classList.add('active');
+
+      const imgURL = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const data = await predict(file);
+          drawResults(img, data);
+        } catch (err) {
+          alert('Prediction failed: ' + err.message);
+        } finally {
+          loading.classList.remove('active');
+          URL.revokeObjectURL(imgURL);
+        }
+      };
+      img.src = imgURL;
+    }
+
+    /* ── API call ──────────────────────────── */
+    async function predict(file) {
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await fetch(`${API_URL}/predict`, { method: 'POST', body: form });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.json();
+    }
+
+    /* ── Draw bounding boxes on canvas ─────── */
+    function drawResults(img, data) {
+      uploadZone.style.display = 'none';
+      results.classList.add('visible');
+      resetBtn.classList.add('visible');
+      buildDetailsPanel(data);
+
+      requestAnimationFrame(() => {
+        const dpr = window.devicePixelRatio || 1;
+        const panelW = document.getElementById('imagePanel').clientWidth - 32;
+        const maxW = panelW > 0 ? panelW : 600;
+        const scale = Math.min(maxW / img.width, 1);
+        const w = img.width * scale;
+        const h = img.height * scale;
+
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.drawImage(img, 0, 0, w, h);
+
+        data.detections.forEach((det, i) => {
+          const color = COLORS[i % COLORS.length];
+          const [x1, y1, x2, y2] = det.bbox.map(v => v * scale);
+          const bw = x2 - x1;
+          const bh = y2 - y1;
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(x1, y1, bw, bh);
+
+          ctx.fillStyle = color + '18';
+          ctx.fillRect(x1, y1, bw, bh);
+
+          const label = `${det.label}  ${(det.confidence * 100).toFixed(1)}%`;
+          ctx.font = '600 12px Inter, sans-serif';
+          const tw = ctx.measureText(label).width + 10;
+          const th = 20;
+          const ly = Math.max(y1, th);
+          ctx.fillStyle = color;
+          ctx.fillRect(x1, ly - th, tw, th);
+
+          ctx.fillStyle = '#fff';
+          ctx.fillText(label, x1 + 5, ly - 6);
+        });
+
+        results.classList.add('animate-in');
+      });
+    }
+
+    /* ── Build the right-side details panel ── */
+    function buildDetailsPanel(data) {
+      const severity = data.status.includes('NO') ? 'none'
+        : data.status.includes('MINOR') ? 'minor'
+          : 'critical';
+
+      let html = `
+        <div class="status-card ${severity}">
+          <div class="severity-label">${data.status}</div>
+          <div class="meta-row">
+            <span><strong>${data.defect_count}</strong> defect${data.defect_count !== 1 ? 's' : ''}</span>
+            <span><strong>${data.inference_time_ms.toFixed(0)}</strong> ms</span>
+          </div>
+        </div>
+      `;
+
+      if (data.detections.length) {
+        html += `<div class="det-list-title">Detected defects</div><div class="det-list">`;
+        data.detections.forEach((det, i) => {
+          const color = COLORS[i % COLORS.length];
+          const pct = (det.confidence * 100).toFixed(1);
+          html += `
+            <div class="det-card">
+              <span class="color-dot" style="color:${color};background:${color}"></span>
+              <div class="det-info">
+                <div class="det-label">${det.label}</div>
+                <div class="det-conf">Confidence: ${pct}% &nbsp;·&nbsp; [${det.bbox.map(v => v.toFixed(0)).join(', ')}]</div>
+              </div>
+              <div class="conf-bar"><div class="conf-bar-inner" style="width:${pct}%;background:${color}"></div></div>
+            </div>
+          `;
+        });
+        html += `</div>`;
+      } else {
+        html += `<div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:.88rem;">No defects detected on this surface ✓</div>`;
+      }
+
+      detailsPanel.innerHTML = html;
+    }
+
+    /* ── Reset ─────────────────────────────── */
+    function resetUI() {
+      uploadZone.style.display = '';
+      results.classList.remove('visible', 'animate-in');
+      resetBtn.classList.remove('visible');
+      detailsPanel.innerHTML = '';
+      fileInput.value = '';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    /* ══════════════════════════════════════════
+       EVALUATION PAGE
+       ══════════════════════════════════════════ */
+    async function loadEvaluation() {
+      const container = document.getElementById('evalContent');
+      try {
+        const resp = await fetch(`${API_URL}/evaluation`);
+        if (resp.status === 404) {
+          container.innerHTML = renderEvalEmpty();
+          return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        evalLoaded = true;
+        container.innerHTML = renderEvalDashboard(data);
+
+        // Animate bars after paint
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            document.querySelectorAll('.bar-chart-fill[data-width]').forEach(el => {
+              el.style.width = el.dataset.width;
+            });
+            document.querySelectorAll('.metric-bar-fill[data-width]').forEach(el => {
+              el.style.width = el.dataset.width;
+            });
+          }, 100);
+        });
+      } catch (err) {
+        container.innerHTML = `<div class="eval-empty"><div class="icon">⚠️</div><h3>Error loading evaluation</h3><p>${err.message}</p></div>`;
+      }
+    }
+
+    function renderEvalEmpty() {
+      return `
+        <div class="eval-empty">
+          <div class="icon">📊</div>
+          <h3>No evaluation data yet</h3>
+          <p>Run the evaluation script to generate model performance metrics on the NEU validation dataset.</p>
+          <code>python evaluate.py --limit 30</code>
+        </div>
+      `;
+    }
+
+    function renderEvalDashboard(d) {
+      const o = d.overall;
+      const classes = Object.keys(d.per_class).sort();
+      const classColors = ['#6c5ce7', '#0984e3', '#f0a500', '#ff4757', '#e84393', '#00cec9'];
+
+      let html = '';
+
+      // Model info bar
+      html += `
+        <div class="model-info animate-in">
+          <div class="model-info-item">
+            <span class="label">Model</span>
+            <span class="value">${d.model}</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">Mode</span>
+            <span class="value">${d.mode}</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">Dataset</span>
+            <span class="value">${d.total_images} images</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">Evaluated</span>
+            <span class="value">${d.evaluated_at}</span>
+          </div>
+        </div>
+      `;
+
+      // Top stat cards
+      html += `<div class="stat-grid">`;
+      html += statCard('mAP@0.50', (o.mAP_50 * 100).toFixed(1) + '%', 'accent');
+      html += statCard('Precision', (o.precision * 100).toFixed(1) + '%', 'blue');
+      html += statCard('Recall', (o.recall * 100).toFixed(1) + '%', 'green');
+      html += statCard('F1 Score', (o.f1_score * 100).toFixed(1) + '%', 'orange');
+      html += statCard('Avg Time', o.avg_inference_ms.toFixed(0) + ' ms', 'cyan');
+      html += statCard('Detection Rate', (o.detection_rate * 100).toFixed(0) + '%', 'red');
+      html += `</div>`;
+
+      // Confusion counts row
+      html += `
+        <div class="stat-grid" style="margin-bottom:2rem;">
+          ${miniStat('True Positives', o.total_true_positives, 'var(--green)')}
+          ${miniStat('False Positives', o.total_false_positives, 'var(--orange)')}
+          ${miniStat('Missed', o.total_missed, 'var(--red)')}
+          ${miniStat('Ground Truth', d.total_ground_truth, 'var(--text-dim)')}
+        </div>
+      `;
+
+      // Per-class AP bar chart
+      html += `<div class="bar-chart-section animate-in" style="animation-delay:.2s">`;
+      html += `<h3><span class="icon">📈</span> Per-Class Average Precision (AP@0.50)</h3>`;
+      classes.forEach((cls, i) => {
+        const ap = d.per_class[cls].ap;
+        const color = classColors[i % classColors.length];
+        const pct = (ap * 100).toFixed(1);
+        html += `
+          <div class="bar-chart-row">
+            <div class="bar-chart-label">${cls.replace(/_/g, ' ').replace(/-/g, ' ')}</div>
+            <div class="bar-chart-track">
+              <div class="bar-chart-fill" data-width="${pct}%" style="width:0;background:${color};">
+                <span>${pct}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+
+      // Per-class table
+      html += `<div class="class-section animate-in" style="animation-delay:.3s">`;
+      html += `<h3><span class="icon">📋</span> Per-Class Detailed Metrics</h3>`;
+      html += `<table class="class-table"><thead><tr>`;
+      html += `<th>Class</th><th>GT</th><th>TP</th><th>FP</th><th>Missed</th>`;
+      html += `<th>Precision</th><th>Recall</th><th>F1</th><th>AP</th>`;
+      html += `</tr></thead><tbody>`;
+
+      classes.forEach((cls, i) => {
+        const m = d.per_class[cls];
+        const color = classColors[i % classColors.length];
+        html += `<tr>`;
+        html += `<td class="class-name" style="color:${color}">${cls.replace(/_/g, ' ').replace(/-/g, ' ')}</td>`;
+        html += `<td>${m.ground_truth_count}</td>`;
+        html += `<td style="color:var(--green)">${m.true_positives}</td>`;
+        html += `<td style="color:var(--orange)">${m.false_positives}</td>`;
+        html += `<td style="color:var(--red)">${m.missed}</td>`;
+        html += `<td>${metricBar(m.precision, color)}</td>`;
+        html += `<td>${metricBar(m.recall, color)}</td>`;
+        html += `<td>${metricBar(m.f1_score, color)}</td>`;
+        html += `<td>${metricBar(m.ap, color)}</td>`;
+        html += `</tr>`;
+      });
+
+      html += `</tbody></table></div>`;
+
+      // Thresholds
+      html += `
+        <div class="model-info animate-in" style="animation-delay:.4s">
+          <div class="model-info-item">
+            <span class="label">Box Threshold</span>
+            <span class="value">${d.thresholds.box_threshold}</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">Text Threshold</span>
+            <span class="value">${d.thresholds.text_threshold}</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">NMS IoU</span>
+            <span class="value">${d.thresholds.nms_iou_threshold}</span>
+          </div>
+          <div class="model-info-item">
+            <span class="label">Eval IoU</span>
+            <span class="value">${d.thresholds.eval_iou_threshold}</span>
+          </div>
+        </div>
+      `;
+
+      return html;
+    }
+
+    function statCard(label, value, colorClass) {
+      return `
+        <div class="stat-card ${colorClass}">
+          <div class="stat-value">${value}</div>
+          <div class="stat-label">${label}</div>
+        </div>
+      `;
+    }
+
+    function miniStat(label, value, color) {
+      return `
+        <div class="stat-card" style="padding:1rem;">
+          <div class="stat-value" style="font-size:1.4rem;color:${color}">${value}</div>
+          <div class="stat-label">${label}</div>
+        </div>
+      `;
+    }
+
+    function metricBar(val, color) {
+      const pct = (val * 100).toFixed(1);
+      return `
+        <div class="metric-bar">
+          <div class="metric-bar-track">
+            <div class="metric-bar-fill" data-width="${pct}%" style="width:0;background:${color};"></div>
+          </div>
+          <span class="metric-bar-value">${pct}%</span>
+        </div>
+      `;
+    }
+  </script>
+</body>
+
+</html>

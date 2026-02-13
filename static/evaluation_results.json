@@ -1,0 +1,87 @@
+{
+  "model": "IDEA-Research/grounding-dino-base",
+  "mode": "zero-shot (pre-trained, no fine-tuning)",
+  "dataset": "NEU Surface Defect Dataset (validation split)",
+  "total_images": 30,
+  "total_ground_truth": 75,
+  "thresholds": {
+    "box_threshold": 0.25,
+    "text_threshold": 0.2,
+    "nms_iou_threshold": 0.35,
+    "eval_iou_threshold": 0.3
+  },
+  "overall": {
+    "mAP_50": 0.1027,
+    "precision": 0.2632,
+    "recall": 0.1333,
+    "f1_score": 0.177,
+    "detection_rate": 1.0,
+    "avg_inference_ms": 11509.6,
+    "total_true_positives": 10,
+    "total_false_positives": 28,
+    "total_missed": 65
+  },
+  "per_class": {
+    "crazing": {
+      "ground_truth_count": 13,
+      "true_positives": 0,
+      "false_positives": 0,
+      "missed": 13,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "ap": 0.0
+    },
+    "inclusion": {
+      "ground_truth_count": 16,
+      "true_positives": 0,
+      "false_positives": 0,
+      "missed": 16,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "ap": 0.0
+    },
+    "patches": {
+      "ground_truth_count": 18,
+      "true_positives": 5,
+      "false_positives": 0,
+      "missed": 13,
+      "precision": 1.0,
+      "recall": 0.2778,
+      "f1_score": 0.4348,
+      "ap": 0.2727
+    },
+    "pitted_surface": {
+      "ground_truth_count": 7,
+      "true_positives": 5,
+      "false_positives": 25,
+      "missed": 2,
+      "precision": 0.1667,
+      "recall": 0.7143,
+      "f1_score": 0.2703,
+      "ap": 0.2523
+    },
+    "rolled-in_scale": {
+      "ground_truth_count": 9,
+      "true_positives": 0,
+      "false_positives": 0,
+      "missed": 9,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "ap": 0.0
+    },
+    "scratches": {
+      "ground_truth_count": 12,
+      "true_positives": 0,
+      "false_positives": 3,
+      "missed": 12,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "ap": 0.0909
+    }
+  },
+  "evaluated_at": "2026-02-13 13:26:04"
+}
