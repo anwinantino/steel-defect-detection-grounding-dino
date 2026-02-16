@@ -9,7 +9,7 @@
     content="Zero-shot steel surface defect detection powered by Grounding DINO. Upload an image to detect cracks, rust, scratches, and more." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap"
     rel="stylesheet" />
   <style>
     /* ── Reset & Base ──────────────────────────── */
@@ -125,6 +125,7 @@
     header h1 span {
       background: linear-gradient(135deg, #a29bfe, #6c5ce7, #00d68f);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
@@ -890,10 +891,10 @@
 
     <!-- Tab navigation -->
     <nav class="tab-nav" id="tabNav">
-      <button class="tab-btn active" data-tab="detection" id="tabDetection">
+      <button type="button" class="tab-btn active" data-tab="detection" id="tabDetection">
         <span class="tab-icon">🔍</span> Detection
       </button>
-      <button class="tab-btn" data-tab="evaluation" id="tabEvaluation">
+      <button type="button" class="tab-btn" data-tab="evaluation" id="tabEvaluation">
         <span class="tab-icon">📊</span> Model Evaluation
       </button>
     </nav>
@@ -905,16 +906,16 @@
         <div class="icon">🔍</div>
         <div class="label">Drop an image here or click to upload</div>
         <div class="hint">Supports JPG, PNG, BMP, TIFF</div>
-        <input type="file" id="fileInput" accept="image/*" />
+        <input type="file" id="fileInput" accept="image/*" aria-label="Upload image" />
       </div>
 
       <!-- Reset button -->
-      <button class="reset-btn" id="resetBtn">↻ Try Another Image</button>
+      <button type="button" class="reset-btn" id="resetBtn">↻ Try Another Image</button>
 
       <!-- Results -->
       <div class="results" id="results">
         <div class="image-panel" id="imagePanel">
-          <canvas id="canvas"></canvas>
+          <canvas id="canvas" role="img" aria-label="Defect detection result preview"></canvas>
         </div>
         <div class="details-panel" id="detailsPanel">
           <!-- Filled by JS -->
@@ -961,14 +962,7 @@
       '#0984e3', '#e84393', '#00cec9', '#fdcb6e',
     ];
 
-    const CLASS_COLORS = {
-      'crazing': '#6c5ce7',
-      'inclusion': '#0984e3',
-      'patches': '#f0a500',
-      'pitted_surface': '#ff4757',
-      'rolled-in_scale': '#e84393',
-      'scratches': '#00cec9',
-    };
+
 
     /* ══════════════════════════════════════════
        TAB NAVIGATION
@@ -1000,10 +994,10 @@
     uploadZone.addEventListener('drop', e => {
       e.preventDefault();
       uploadZone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]).catch(console.error);
     });
     fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) handleFile(fileInput.files[0]);
+      if (fileInput.files.length) handleFile(fileInput.files[0]).catch(console.error);
     });
     resetBtn.addEventListener('click', resetUI);
 
@@ -1015,16 +1009,18 @@
 
       const imgURL = URL.createObjectURL(file);
       const img = new Image();
-      img.onload = async () => {
-        try {
-          const data = await predict(file);
-          drawResults(img, data);
-        } catch (err) {
-          alert('Prediction failed: ' + err.message);
-        } finally {
-          loading.classList.remove('active');
-          URL.revokeObjectURL(imgURL);
-        }
+      img.onload = () => {
+        (async () => {
+          try {
+            const data = await predict(file);
+            drawResults(img, data);
+          } catch (err) {
+            alert('Prediction failed: ' + err.message);
+          } finally {
+            loading.classList.remove('active');
+            URL.revokeObjectURL(imgURL);
+          }
+        })().catch(console.error);
       };
       img.src = imgURL;
     }
